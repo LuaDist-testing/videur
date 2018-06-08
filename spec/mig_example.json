@@ -1,0 +1,169 @@
+{
+    "service": {
+        "location": "http://127.0.0.1:8282",
+        "version": "1.1",
+        "resources": {
+            "/dashboard": {
+                "GET": {}
+            },
+            "/action": {
+                 "GET": {
+                    "parameters": {
+                        "actionid": {
+                            "validation": "digits:1,20",
+                            "required": true
+                       }
+                    }
+                }
+            },
+            "/command": {
+                "GET": {
+                    "parameters": {
+                        "commandid": {
+                            "validation": "regexp:[0-9]{1,20}",
+                            "required": true
+                        }
+                    }
+                }
+            },
+            "/search": {
+                "GET": {
+                    "parameters": {
+                        "before": {
+                            "validation":"datetime",
+                            "required": false
+                        },
+                        "after": {
+                            "validation":"datetime",
+                            "required": false
+                        },
+                        "type": {
+                            "validation":"values:action|command|agent",
+                            "required": false
+                        },
+                        "report": {
+                            "validation":"regexp:[a-zA-Z0-9]{1,64}",
+                            "required": false
+                        },
+                        "agentname": {
+                            "validation":"regexp:[\\w\\n\\r\\t ]{0,256}",
+                            "required": false
+                        },
+                        "actionname": {
+                            "validation":"regexp:[\\w\\n\\r\\t ]{0,1024}",
+                            "required": false
+                        },
+                        "status": {
+                            "validation":"regexp:[a-zA-Z0-9]{1,64}",
+                            "required": false
+                        },
+                        "threatfamily": {
+                            "validation":"regexp:[a-zA-Z0-9]{1,64}",
+                            "required": false
+                        },
+                        "limit": {
+                            "validation":"digits:1,20",
+                            "required": false
+                        }
+                    }
+                }
+            },
+            "/action/create": {
+                "POST": {
+                    "format": "json",
+                    "must_validate": false,
+                    "validation": {
+                        "id": "[[float64]]",
+                        "name": "[[text]]",
+                        "target": "[[text]]",
+                        "description": {
+                            "author": "[[text]]",
+                            "email": "[[email]]",
+                            "url": "[[text]]",
+                            "revision": "[float64]"
+                        },
+                        "threat": {
+                            "level": "[[text]]",
+                            "family": "[[text]]",
+                            "type": "[[text]]"
+                        },
+                        "validfrom": "[[datetime]]",
+                        "expireafter": "[[datetime]]",
+                        "operations": [
+                            {
+                                "module": "[[text]]",
+                                "parameters": "[[json]]"
+                            }
+                        ],
+                        "pgpsignatures": [
+                            "[[text]]"
+                        ],
+                        "starttime": "[[datetime]]",
+                        "finishtime": "[[datetime]]",
+                        "lastupdatetime": "[[datetime]]",
+                        "counters": "[[json]]",
+                        "syntaxversion": "[[float64]]"
+                    },
+                    "limits": {
+                        "rates": [
+                            {
+                                "seconds": 60,
+                                "hits": 10,
+                                "match": "header:Authorization AND header:User-Agent"
+                            },
+                            {
+                                "seconds": 10,
+                                "hits": 100,
+                                "match": "header:X-Forwarded-For OR ipv4 OR ipv6"
+                            }
+                        ],
+                        "max_body_size": "10k"
+                    }
+                }
+            }
+        },
+        "description": {
+            "owner": "Mozilla Operations Security",
+            "developer": "Julien Vehent <jvehent@mozilla.com>",
+            "operator": "Julien Vehent <jvehent@mozilla.com>"
+        },
+        "configuration": {
+            "authentication": "fxa assertion",
+            "tls": {
+                "require_backward_compatibility": false,
+                "ocsp_stapling": {
+                    "enabled": true,
+                    "must-staple": 7776000
+                },
+                "hsts": {
+                    "enabled": true,
+                    "max-age": 15768000
+                }
+            },
+            "content security policy": {
+                "enabled": true,
+                "Content-Security-Policy": "default-src 'none'; style-src cdn.example.com; report-uri /_/csp-reports"
+            },
+            "limits": {
+                "rates": [
+                    {
+                        "seconds": 10,
+                        "hits": 200,
+                        "match": "header:X-Forwarded-For OR ipv4 OR ipv6"
+                    }
+                ],
+                "max_req_size": "500B",
+                "permitted_origins": [
+                    "france",
+                    "usa",
+                    "uk"
+                ],
+                "ip whitelist": [],
+                "ip blacklist": []
+            },
+            "logging": {
+                "location": "amqps://mozdef.mozilla.org/mig/"
+            }
+        }
+    }
+}
