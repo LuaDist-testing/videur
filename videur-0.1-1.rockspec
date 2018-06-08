@@ -1,10 +1,18 @@
-package = "Videur"
-version = "0.1-0"
+-- This file was automatically generated for the LuaDist project.
 
+package = "videur"
+version = "0.1-1"
+
+-- LuaDist source
 source = {
-   url = "git://github.com/mozilla/videur",
-   tag = "0.1",
+  tag = "0.1-1",
+  url = "git://github.com/LuaDist-testing/videur.git"
 }
+-- Original source
+-- source = {
+--    url = "git://github.com/mozilla/videur",
+--    branch = "0.1.x",
+-- }
 
 description = {
    summary = "Web Application Firewall",

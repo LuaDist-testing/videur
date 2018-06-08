@@ -4,8 +4,22 @@
         "version": "1.1",
         "resources": {
             "/dashboard": {
-                "GET": {}
+                "GET": {
+                    "limits": {
+                        "rates": [
+                            {
+                                "seconds": 1,
+                                "hits": 2,
+                                "match": "header:Authorization AND header:User-Agent AND var:remote_addr"
+                            }]
+                    }
+                }
             },
+
+            "regexp:/welp/[a-zA-Z0-9]{1,64}": {
+                 "GET": {}
+            },
+
             "/action": {
                  "GET": {
                     "parameters": {
@@ -70,39 +84,41 @@
             },
             "/action/create": {
                 "POST": {
-                    "format": "json",
-                    "must_validate": false,
-                    "validation": {
-                        "id": "[[float64]]",
-                        "name": "[[text]]",
-                        "target": "[[text]]",
-                        "description": {
-                            "author": "[[text]]",
-                            "email": "[[email]]",
-                            "url": "[[text]]",
-                            "revision": "[float64]"
-                        },
-                        "threat": {
-                            "level": "[[text]]",
-                            "family": "[[text]]",
-                            "type": "[[text]]"
-                        },
-                        "validfrom": "[[datetime]]",
-                        "expireafter": "[[datetime]]",
-                        "operations": [
-                            {
-                                "module": "[[text]]",
-                                "parameters": "[[json]]"
-                            }
-                        ],
-                        "pgpsignatures": [
-                            "[[text]]"
-                        ],
-                        "starttime": "[[datetime]]",
-                        "finishtime": "[[datetime]]",
-                        "lastupdatetime": "[[datetime]]",
-                        "counters": "[[json]]",
-                        "syntaxversion": "[[float64]]"
+                    "body": {
+                        "format": "json",
+                        "must_validate": false,
+                        "json_validation": {
+                            "id": "[[float64]]",
+                            "name": "[[text]]",
+                            "target": "[[text]]",
+                            "description": {
+                                "author": "[[text]]",
+                                "email": "[[email]]",
+                                "url": "[[text]]",
+                                "revision": "[float64]"
+                            },
+                            "threat": {
+                                "level": "[[text]]",
+                                "family": "[[text]]",
+                                "type": "[[text]]"
+                            },
+                            "validfrom": "[[datetime]]",
+                            "expireafter": "[[datetime]]",
+                            "operations": [
+                                {
+                                    "module": "[[text]]",
+                                    "parameters": "[[json]]"
+                                }
+                            ],
+                            "pgpsignatures": [
+                                "[[text]]"
+                            ],
+                            "starttime": "[[datetime]]",
+                            "finishtime": "[[datetime]]",
+                            "lastupdatetime": "[[datetime]]",
+                            "counters": "[[json]]",
+                            "syntaxversion": "[[float64]]"
+                        }
                     },
                     "limits": {
                         "rates": [
@@ -114,7 +130,7 @@
                             {
                                 "seconds": 10,
                                 "hits": 100,
-                                "match": "header:X-Forwarded-For OR ipv4 OR ipv6"
+                                "match": "header:X-Forwarded-For OR var:remote_addr"
                             }
                         ],
                         "max_body_size": "10k"
@@ -149,7 +165,7 @@
                     {
                         "seconds": 10,
                         "hits": 200,
-                        "match": "header:X-Forwarded-For OR ipv4 OR ipv6"
+                        "match": "header:X-Forwarded-For OR var:remote_addr"
                     }
                 ],
                 "max_req_size": "500B",

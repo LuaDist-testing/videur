@@ -3,14 +3,12 @@
 -- rejects anything that's not
 local cjson = require "cjson"
 local rex = require "rex_posix"
-local util = require "_util"
-local cached_spec = ngx.shared.cached_spec
 local date = require "date"
 local len = string.len
+local util = require "util"
 
 
-function get_location()
-    local spec_url = ngx.var.spec_url or "http://127.0.0.1:8282/api-specs"
+function get_location(spec_url, cached_spec)
     local last_updated = cached_spec:get("last-updated")
 
     -- update the spec if needed
@@ -20,6 +18,8 @@ function get_location()
 
     -- TODO: we need a way to invalidate the cache
     if not last_updated then
+        ngx.log(ngx.INFO, "Loading the api-spec file")
+
         local body, version, resources = nil
         -- we need to load it from the backend
         body = util.fetch_http_body(spec_url)
@@ -31,11 +31,21 @@ function get_location()
         cached_spec:set('location', service.location)
         version = service.version
         cached_spec:set('version', service.version)
+
         for location, desc in pairs(service.resources) do
+            local verbs = {}
+
             for verb, def in pairs(desc) do
                 local definition = cjson.encode(def or {})
-                cached_spec:set(verb .. ":" .. location, definition)
+                local t, l = location:match('(%a+):(.*)')
+                if t == 'regexp' then
+                    cached_spec:set("regexp:" .. verb .. ":" .. l, definition)
+                else
+                    cached_spec:set(verb .. ":" .. location, definition)
+                end
+                verbs[verb] = true
             end
+            cached_spec:set("verbs:" .. location, util.implode(",", verbs))
         end
         last_updated = os.time()
         cached_spec:set("last-updated", last_updated)
@@ -46,90 +56,71 @@ function get_location()
 end
 
 
-function check_body_size(max_body_size)
-    local content_length = tonumber(ngx.req.get_headers()['content-length'])
-    local method = ngx.req.get_method()
-
-    if not max_body_size then
-        return
-    end
-
-    if content_length then
-        if content_length > max_body_size then
-            -- if the header says it's bigger we can drop now...
-            ngx.exit(413)
-        end
-    end
-    -- ...but we won't trust it if it says it's smaller
-    local sock, err = ngx.req.socket()
-    if not sock then
-        if err == 'no body' then
-            return
-        else
-            return util.bad_request(err)
-        end
-    end
-
-    local chunk_size = 4096
-    if content_length then
-        if content_length < chunk_size then
-            chunk_size = content_length
-        end
-    end
-
-    sock:settimeout(0)
-
-    -- reading the request body
-    ngx.req.init_body(128 * 1024)
-    local size = 0
-
-    while true do
-        if content_length then
-            if size >= content_length then
-                break
-            end
-        end
-        local data, err, partial = sock:receive(chunk_size)
-        data = data or partial
-        if not data then
-            return bad_request("Missing data")
-        end
-
-
-        ngx.req.append_body(data)
-        size = size + len(data)
-
-        if size >= max_body_size then
-            ngx.exit(413)
-        end
-
-        local less = content_length - size
-        if less < chunk_size then
-            chunk_size = less
-        end
-    end
-    ngx.req.finish_body()
+function _repl_var(match, captures)
+    local res = 'ngx.var.' .. match
+    res = res .. ' or ""'
+    return res
 end
 
 
-function match()
-    -- get the location frmo the specs
-    local location = get_location()
+function _repl_header(match, captures)
+    local res = 'ngx.var.http_' .. match
+    res = res .. ' or ""'
+    return res
+end
 
-    -- now let's see if we have a match
+
+function convert_match(expr)
+    -- TODO: take care of the ipv4 and ipv6 fields
+    local expr = expr:lower()
+    expr = expr:gsub("-", "_")
+    expr = rex.gsub(expr, 'header:([a-zA-Z\\-_0-9]+)', _repl_header)
+    expr = rex.gsub(expr, 'var:([a-zA-Z\\-_0-9]+)', _repl_var)
+    expr = expr:gsub("and", " .. ':::' .. ")
+    expr = "return " .. expr
+    return loadstring(expr)
+end
+
+
+function match(spec_url, cached_spec)
+    -- get the location from the spec url
+    local location = get_location(spec_url, cached_spec)
+
+    -- now let's see if we have a direct match
     local method = ngx.req.get_method()
     local key = method .. ":" .. ngx.var.uri
     local cached_value = cached_spec:get(key)
 
     if not cached_value then
-        -- we don't!
-        -- if we are serving / we can send back a page
-        -- TODO: whitelist of URLS ?
-        if ngx.var.uri == '/' then
-            ngx.say("Welcome to Nginx/Videur")
-            return ngx.exit(200)
-        else
-            return ngx.exit(ngx.HTTP_NOT_FOUND)
+        -- we don't - we can try a regexp match now
+        for __, expr in ipairs(cached_spec:get_keys()) do
+            local t, v, l = expr:match('(%a+):(.*):(.*)')
+            if t == 'regexp' then
+                if rex.match(ngx.var.uri, l) and v == method then
+                    cached_value = cached_spec:get(expr)
+                    break
+                end
+            end
+        end
+
+        if not cached_value then
+            -- we don't!
+            -- if we are serving / we can send back a page
+            -- TODO: whitelist of URLS ?
+            if ngx.var.uri == '/' then
+                ngx.say("Welcome to Nginx/Videur")
+                return ngx.exit(200)
+            else
+                local existing_verbs = cached_spec:get("verbs:/dashboard")
+
+                if not existing_verbs then
+                    return ngx.exit(ngx.HTTP_NOT_FOUND)
+                else
+                    -- XXX that does not seem to be applied
+                    ngx.header['Allow'] = existing_verbs
+                    return ngx.exit(ngx.HTTP_NOT_ALLOWED)
+                end
+            end
         end
     end
 
@@ -183,7 +174,7 @@ function match()
                         -- the value does not match the constraints
                         return util.bad_request("Field does not match " .. key)
                     end
-                elseif t == 'RFC3339' then
+                elseif t == 'datetime' then
                     if not pcall(function() date(val) end) then
                         return util.bad_request("Field is not RFC3339 " .. key)
                     end
@@ -192,35 +183,31 @@ function match()
                     return util.bad_request("Bad rule " .. t)
                 end
             end
-    else
-        -- this field was not declared
-        return util.bad_request("Unknown field " .. key)
+        else
+            -- this field was not declared
+            return util.bad_request("Unknown field " .. key)
+        end
     end
 
+    -- let's prepare the limits by converting the match value
+    -- into a lua expression
+    -- XXX should be cached too...
+    local parsed_limits = {max_body_size = limits.max_body_size}
+    for key, value in pairs(limits) do
+        if key == 'rates' then
+            local rates = value
+            for __, rate in pairs(rates) do
+                rate.match = convert_match(rate.match)
+            end
+            parsed_limits.rates = rates
+        end
     end
 
-    return location, limits, params
+    return location, parsed_limits, params
 end
 
 
--- main code
--- TODO make this a lib so we can use it with other
--- filters
-
--- abort if we don't have any use agent
-local key = ngx.var.http_user_agent
-if not key then
-    return util.bad_request("no user-agent found")
-end
-
--- set the proxy_pass value by matching
--- the request against the api specs
-local limits, params
-ngx.var.target, limits, params = match()
-
--- control the body size with the general value or with the
--- limits provided
-
-local max_size = util.size2int(limits.max_body_size) or util.size2int(ngx.var.max_body_size)
-check_body_size(max_size)
-
+-- public interface
+return {
+  match = match
+}
